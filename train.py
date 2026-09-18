@@ -23,6 +23,10 @@ imagelist = filter(lambda x: x.find('sat') != -1, os.listdir(ROOT))
 trainlist = list(map(lambda x: x[:-8], imagelist))
 NAME = 'palsar_CBDNet'
 BATCHSIZE_PER_CARD = 4
+EPOCHS_PER_RUN = 25
+
+WEIGHTS_PATH = 'weights/' + NAME + '.th'
+EPOCH_FILE = 'weights/' + NAME + '_epoch.txt'
 
 solver = MyFrame(CBDNet, dice_bce_loss, 2e-4)
 batchsize = torch.cuda.device_count() * BATCHSIZE_PER_CARD
@@ -35,12 +39,27 @@ data_loader = torch.utils.data.DataLoader(
     shuffle=False,
     num_workers=4)
 
-mylog = open('logs/' + NAME + '.log', 'w')
+total_epoch = 80
+
+start_epoch = 0
+if os.path.exists(EPOCH_FILE):
+    with open(EPOCH_FILE, 'r') as f:
+        start_epoch = int(f.read().strip())
+
+if os.path.exists(WEIGHTS_PATH):
+    solver.load(WEIGHTS_PATH)
+    print(f'Resuming from existing weights at {WEIGHTS_PATH} (epoch {start_epoch})')
+else:
+    print('No existing weights found, starting from random initialization')
+
+end_epoch = min(start_epoch + EPOCHS_PER_RUN, total_epoch)
+
+mylog = open('logs/' + NAME + '.log', 'a' if start_epoch > 0 else 'w')
 tic = time()
 no_optim = 0
-total_epoch = 80
 train_epoch_best_loss = 100.
-for epoch in range(1, total_epoch + 1):
+last_epoch = start_epoch
+for epoch in range(start_epoch + 1, end_epoch + 1):
     data_loader_iter = iter(data_loader)
     train_epoch_loss = 0
     for img, mask in data_loader_iter:
@@ -64,7 +83,12 @@ for epoch in range(1, total_epoch + 1):
     else:
         no_optim = 0
         train_epoch_best_loss = train_epoch_loss
-        solver.save('weights/' + NAME + '.th')
+        solver.save(WEIGHTS_PATH)
+
+    last_epoch = epoch
+    with open(EPOCH_FILE, 'w') as f:
+        f.write(str(epoch))
+
     if no_optim > 6:
         print (mylog, 'early stop at %d epoch' % epoch)
         # print
@@ -73,11 +97,18 @@ for epoch in range(1, total_epoch + 1):
     if no_optim > 3:
         if solver.old_lr < 5e-7:
             break
-        solver.load('weights/' + NAME + '.th')
+        solver.load(WEIGHTS_PATH)
         solver.update_lr(5.0, factor=True, mylog=mylog)
     mylog.flush()
 
-print( mylog, 'Finish!') 
+solver.save(WEIGHTS_PATH)
+print( mylog, 'Finish!')
 # print
 # 'Finish!'
 mylog.close()
+
+if last_epoch >= total_epoch:
+    print(f'Training complete: reached final epoch {last_epoch}/{total_epoch}.')
+else:
+    print(f'Stopped after epoch {last_epoch} (target for this run was epoch {end_epoch}).')
+    print(f'Run this script again to resume training from epoch {last_epoch}.')
