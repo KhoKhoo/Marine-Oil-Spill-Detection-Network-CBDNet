@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import os
 import sys
+import math
 
 def randomHueSaturationValue(image, hue_shift_limit=(-180, 180),
                              sat_shift_limit=(-255, 255),
@@ -46,8 +47,8 @@ def randomShiftScaleRotate(image, mask,
         dx = round(np.random.uniform(shift_limit[0], shift_limit[1]) * width)
         dy = round(np.random.uniform(shift_limit[0], shift_limit[1]) * height)
 
-        cc = np.math.cos(angle / 180 * np.math.pi) * sx
-        ss = np.math.sin(angle / 180 * np.math.pi) * sy
+        cc = math.cos(angle / 180 * math.pi) * sx
+        ss = math.sin(angle / 180 * math.pi) * sy
         rotate_matrix = np.array([[cc, -ss], [ss, cc]])
 
         box0 = np.array([[0, 0], [width, 0], [width, height], [0, height], ])
