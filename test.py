@@ -134,12 +134,12 @@ class TTAFrame():
         self.net.load_state_dict(torch.load(path),False)
         
 #source = 'dataset/test/'
-source = '.datasets/test/palsar/sat/'
+source = '/kaggle/input/datasets/kholodalattas/sos-oil-spill-original/test/palsar/sat/'
 val = os.listdir(source)
 solver = TTAFrame(CBDNet)
-solver.load('.weights/palsar_CBDNet.th')
+solver.load('weights/palsar_CBDNet.th')
 tic = time()
-target = '.submits/palsar_CBDNet/'
+target = 'submits/palsar_CBDNet/'
 os.mkdir(target)
 for i,name in enumerate(val):
     if i%10 == 0:
