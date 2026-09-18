@@ -171,5 +171,5 @@ class CBDNet(nn.Module):
         out = self.finalrelu2(out)
         out = self.finalconv3(out)
 
-        return F.sigmoid(out)
+        return torch.sigmoid(out)
 

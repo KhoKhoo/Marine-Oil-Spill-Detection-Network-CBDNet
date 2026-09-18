@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torch.autograd import Variable as V
 
 import cv2
 import numpy as np
@@ -33,17 +32,18 @@ class MyFrame():
         return mask
     
     def test_batch(self):
-        self.forward(volatile=True)
-        mask =  self.net.forward(self.img).cpu().data.numpy().squeeze(1)
+        with torch.no_grad():
+            self.forward()
+            mask = self.net.forward(self.img).cpu().data.numpy().squeeze(1)
         mask[mask>0.5] = 1
         mask[mask<=0.5] = 0
-        
+
         return mask, self.img_id
     
     def test_one_img_from_path(self, path):
         img = cv2.imread(path)
         img = np.array(img, np.float32)/255.0 * 3.2 - 1.6
-        img = V(torch.Tensor(img).cuda())
+        img = torch.Tensor(img).cuda()
         
         mask = self.net.forward(img).squeeze().cpu().data.numpy()#.squeeze(1)
         mask[mask>0.5] = 1
@@ -51,10 +51,10 @@ class MyFrame():
         
         return mask
         
-    def forward(self, volatile=False):
-        self.img = V(self.img.cuda(), volatile=volatile)
+    def forward(self):
+        self.img = self.img.cuda()
         if self.mask is not None:
-            self.mask = V(self.mask.cuda(), volatile=volatile)
+            self.mask = self.mask.cuda()
         
     def optimize(self):
         self.forward()
