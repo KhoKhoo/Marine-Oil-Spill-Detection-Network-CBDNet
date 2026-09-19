@@ -5,7 +5,6 @@ from torch.autograd import Variable as V
 
 import cv2
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
