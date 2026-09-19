@@ -23,10 +23,10 @@ def compute_iou1(img_truth,img_pred):
     y_true = y_true.flatten()
     current = confusion_matrix(y_true, y_pred, labels=[255,0])
     #print >> mylog, current
-    TP = current[1][1]*1.0
-    FN = current[1][0]*1.0
-    TN = current[0][0]*1.0
-    FP = current[0][1]*1.0
+    TP = current[0][0]*1.0
+    FN = current[0][1]*1.0
+    FP = current[1][0]*1.0
+    TN = current[1][1]*1.0
     #Accuracy = (TP + TN)/512/512
     precision = TP / (TP+FP)
     recall = TP / (TP+FN)
