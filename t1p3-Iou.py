@@ -5,9 +5,9 @@ import numpy as np
 from PIL import Image
 import os
 olderr = np.seterr(all='ignore')
-name_truth = '.datasets/test/palsar/gt/'
-name_pred = '.submits/palsar_CBDNet/'
-mylog = open('.datasets/test/palsar'+'.log','w')
+name_truth = '/kaggle/input/datasets/kholodalattas/sos-oil-spill-original/test/palsar/gt/'
+name_pred = 'submits/palsar_CBDNet/'
+mylog = open('test_results.log','w')
 
 def compute_iou1(img_truth,img_pred):
     # ytrue, ypred is a flatten vector
