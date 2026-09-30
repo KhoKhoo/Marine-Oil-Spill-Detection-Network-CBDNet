@@ -90,8 +90,15 @@ def randomRotate90(image, mask, u=0.5):
 
     return image, mask
 
+def find_sat_image_path(id, root):
+    for ext in ('png', 'jpg', 'jpeg'):
+        path = os.path.join(root, '{}_sat.{}'.format(id, ext))
+        if os.path.exists(path):
+            return path
+    raise FileNotFoundError('No {}_sat.{{png,jpg,jpeg}} found in {}'.format(id, root))
+
 def default_loader(id, root):
-    img = cv2.imread(os.path.join(root,'{}_sat.jpg').format(id))
+    img = cv2.imread(find_sat_image_path(id, root))
     mask = cv2.imread(os.path.join(root+'{}_mask.png').format(id), cv2.IMREAD_GRAYSCALE)
     
     img = randomHueSaturationValue(img,
