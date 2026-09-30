@@ -56,7 +56,7 @@ FP_total = 0
 intersection_total = 0
 union_total = 0
 
-print >> mylog, '文件名，Iou_1，Iou_2，mIoU，fscore，recall，precision, accuracy'
+print('文件名，Iou_1，Iou_2，mIoU，fscore，recall，precision, accuracy', file=mylog)
 for filename in os.listdir(name_truth):              #listdir的参数是文件夹的路径
     img_truth = name_truth+filename
     img_pred = name_pred+filename
@@ -89,16 +89,16 @@ for filename in os.listdir(name_truth):              #listdir的参数是文件�
     
     #print (str(filename)+' '+str(round(mIoU,6))+' '+str(round(fscore,6))+' '+str(round(recall,6))+' '+str(round(precision,6))+' '+str(round(accuracy,6)))
 
-    print >> mylog,str(filename)+' '+str(round(Iou1[0],6))+' '+str(round(Iou1[1],6))+' '+str(round(mIoU1,6))+' '+str(round(fscore1,6))+' '+str(round(recall1,6))+' '+str(round(precision1,6))+' '+str(round(accuracy1,6))
+    print(str(filename)+' '+str(round(Iou1[0],6))+' '+str(round(Iou1[1],6))+' '+str(round(mIoU1,6))+' '+str(round(fscore1,6))+' '+str(round(recall1,6))+' '+str(round(precision1,6))+' '+str(round(accuracy1,6)), file=mylog)
 
-print >> mylog, '--------------------'	
-print >> mylog,'总mIou：'+str(Iou[0])
-print >> mylog,'总mIou：'+str(Iou[1])
-print >> mylog,'总mIou：'+str(mIoU)
-print >> mylog,'总fscore：'+str(fscore)
-print >> mylog,'总recall：'+str(recall)
-print >> mylog,'总precision'+str(precision)
-print >> mylog,'总accuracy'+str(accuracy)
-print >> mylog, 'Finish!'
-print 'Finish!'
+print('--------------------', file=mylog)
+print('总mIou：'+str(Iou[0]), file=mylog)
+print('总mIou：'+str(Iou[1]), file=mylog)
+print('总mIou：'+str(mIoU), file=mylog)
+print('总fscore：'+str(fscore), file=mylog)
+print('总recall：'+str(recall), file=mylog)
+print('总precision'+str(precision), file=mylog)
+print('总accuracy'+str(accuracy), file=mylog)
+print('Finish!', file=mylog)
+print('Finish!')
 mylog.close()

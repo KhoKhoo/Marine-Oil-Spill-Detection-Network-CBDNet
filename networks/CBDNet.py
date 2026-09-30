@@ -173,3 +173,60 @@ class CBDNet(nn.Module):
 
         return torch.sigmoid(out)
 
+
+EFFNET_CHANNELS = {
+    'b0': [24, 40, 112, 320],
+    'b1': [24, 40, 112, 320],
+    'b2': [24, 48, 120, 352],
+    'b3': [32, 48, 136, 384],
+    'b4': [32, 56, 160, 448],
+}
+
+class CBDNet_EfficientNet(nn.Module):
+    def __init__(self, num_classes=1, num_channels=3, variant='b0', pretrained=True):
+        super(CBDNet_EfficientNet, self).__init__()
+        filters = EFFNET_CHANNELS[variant]
+        constructor = getattr(models, 'efficientnet_' + variant)
+        weights = 'DEFAULT' if pretrained else None
+        features = constructor(weights=weights).features
+
+        self.encoder1 = features[0:3]   # stride 4
+        self.encoder2 = features[3]     # stride 8
+        self.encoder3 = features[4:6]   # stride 16
+        self.encoder4 = features[6:8]   # stride 32
+
+        self.dblock = Dblock(filters[3])
+
+        self.decoder4 = DecoderBlock(filters[3], filters[2])
+        self.decoder3 = DecoderBlock(filters[2], filters[1])
+        self.decoder2 = DecoderBlock(filters[1], filters[0])
+        self.decoder1 = DecoderBlock(filters[0], filters[0])
+
+        self.scSEAtt4 = scSE(filters[3])
+        self.scSEAtt3 = scSE(filters[2])
+        self.scSEAtt2 = scSE(filters[1])
+        self.scSEAtt1 = scSE(filters[0])
+
+        self.finaldeconv1 = nn.ConvTranspose2d(filters[0], 32, 4, 2, 1)
+        self.finalrelu1 = nonlinearity
+        self.finalconv2 = nn.Conv2d(32, 32, 3, padding=1)
+        self.finalrelu2 = nonlinearity
+        self.finalconv3 = nn.Conv2d(32, num_classes, 3, padding=1)
+
+    def forward(self, x):
+        e1 = self.scSEAtt1(self.encoder1(x))
+        e2 = self.scSEAtt2(self.encoder2(e1))
+        e3 = self.scSEAtt3(self.encoder3(e2))
+        e4 = self.scSEAtt4(self.encoder4(e3))
+        e4 = self.dblock(e4)
+        d4 = self.decoder4(e4) + e3
+        d3 = self.decoder3(d4) + e2
+        d2 = self.decoder2(d3) + e1
+        d1 = self.decoder1(d2)
+        out = self.finaldeconv1(d1)
+        out = self.finalrelu1(out)
+        out = self.finalconv2(out)
+        out = self.finalrelu2(out)
+        out = self.finalconv3(out)
+        return torch.sigmoid(out)
+
