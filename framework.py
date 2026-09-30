@@ -76,7 +76,7 @@ class MyFrame():
     def load(self, path):
         self.net.load_state_dict(torch.load(path, map_location=self.device))
 
-    def save_checkpoint(self, path, epoch, no_optim, best_loss):
+    def save_checkpoint(self, path, epoch, no_optim, best_loss, best_state_dict=None):
         torch.save({
             'model_state_dict': self.net.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
@@ -84,6 +84,7 @@ class MyFrame():
             'lr': self.old_lr,
             'no_optim': no_optim,
             'best_loss': best_loss,
+            'best_state_dict': best_state_dict,
         }, path)
 
     def load_checkpoint(self, path):
@@ -93,7 +94,7 @@ class MyFrame():
         self.old_lr = ckpt['lr']
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = self.old_lr
-        return ckpt['epoch'], ckpt['no_optim'], ckpt['best_loss']
+        return ckpt['epoch'], ckpt['no_optim'], ckpt['best_loss'], ckpt.get('best_state_dict')
 
     def update_lr(self, new_lr, mylog, factor=False):
         if factor:
