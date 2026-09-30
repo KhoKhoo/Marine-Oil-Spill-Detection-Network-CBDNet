@@ -1,7 +1,6 @@
 import argparse
 import copy
 import csv
-import functools
 import json
 import os
 import random
@@ -11,10 +10,10 @@ from time import time
 import numpy as np
 import torch
 
-from networks.CBDNet import CBDNet, CBDNet_EfficientNet
 from framework import MyFrame
 from dice_bce_loss import dice_bce_loss
 from data import ImageFolder
+from models_factory import build_model
 
 SHAPE = (256, 256)
 
@@ -37,13 +36,6 @@ def parse_args():
     p.add_argument('--no_pretrained', action='store_true',
                     help='skip loading pretrained backbone weights (fast local testing only)')
     return p.parse_args()
-
-
-def build_model_fn(model_name, pretrained):
-    if model_name == 'resnet34':
-        return CBDNet
-    variant = 'b0' if model_name == 'effb0' else 'b3'
-    return functools.partial(CBDNet_EfficientNet, variant=variant, pretrained=pretrained)
 
 
 def set_seed(seed):
@@ -121,7 +113,7 @@ def main():
                  'Use prepare_data.py to create a <data_root>/holdout split before training.')
     holdoutlist = list_ids(holdout_root)
 
-    model_fn = build_model_fn(args.model, pretrained=not args.no_pretrained)
+    model_fn = build_model(args.model, pretrained=not args.no_pretrained)
     solver = MyFrame(model_fn, dice_bce_loss, args.lr)
 
     batchsize = max(torch.cuda.device_count(), 1) * args.batch_size
