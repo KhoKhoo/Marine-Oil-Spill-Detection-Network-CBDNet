@@ -5,6 +5,7 @@ import datetime
 import json
 import os
 import random
+import shutil
 import sys
 from time import time
 
@@ -37,6 +38,7 @@ def parse_args():
                     help='enable the no-improvement-for-6-epochs and lr<5e-7 stop rules')
     p.add_argument('--no_pretrained', action='store_true',
                     help='skip loading pretrained backbone weights (fast local testing only)')
+    p.add_argument('--num_workers', type=int, default=4)
     return p.parse_args()
 
 
@@ -57,11 +59,25 @@ def safe_div(n, d):
 
 
 def get_memory_stats():
-    ram_gb = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3)
+    process = psutil.Process(os.getpid())
+
+    ram_gb = process.memory_info().rss / (1024 ** 3)
+
     gpu_peak_gb = None
     if torch.cuda.is_available():
         gpu_peak_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
-    return ram_gb, gpu_peak_gb
+
+    shm_used_mb = None
+    if os.path.isdir('/dev/shm'):
+        shm_used_mb = shutil.disk_usage('/dev/shm').used / (1024 ** 2)
+
+    num_fds = None
+    if os.path.isdir('/proc'):
+        num_fds = len(os.listdir('/proc/self/fd'))
+
+    num_children = len(process.children(recursive=True))
+
+    return ram_gb, gpu_peak_gb, shm_used_mb, num_fds, num_children
 
 
 def evaluate_holdout(solver, holdout_loader):
@@ -134,14 +150,16 @@ def main():
         dataset,
         batch_size=batchsize,
         shuffle=False,
-        num_workers=4)
+        num_workers=args.num_workers,
+        persistent_workers=args.num_workers > 0)
 
     holdout_dataset = ImageFolder(holdoutlist, holdout_root, augment=False)
     holdout_loader = torch.utils.data.DataLoader(
         holdout_dataset,
         batch_size=batchsize,
         shuffle=False,
-        num_workers=4)
+        num_workers=args.num_workers,
+        persistent_workers=args.num_workers > 0)
 
     start_epoch = 0
     no_optim = 0
@@ -174,6 +192,8 @@ def main():
 
     for epoch in range(start_epoch + 1, args.epochs + 1):
         epoch_tic = time()
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()
         data_loader_iter = iter(data_loader)
         train_epoch_loss = 0
         for img, mask in data_loader_iter:
@@ -185,10 +205,15 @@ def main():
         holdout_metrics = evaluate_holdout(solver, holdout_loader)
         epoch_seconds = time() - epoch_tic
 
-        ram_gb, gpu_peak_gb = get_memory_stats()
+        ram_gb, gpu_peak_gb, shm_used_mb, num_fds, num_children = get_memory_stats()
         mem_str = f'ram:{ram_gb:.2f}GB'
         if gpu_peak_gb is not None:
             mem_str += f', gpu_peak:{gpu_peak_gb:.2f}GB'
+        if shm_used_mb is not None:
+            mem_str += f', shm:{shm_used_mb:.2f}MB'
+        if num_fds is not None:
+            mem_str += f', fds:{num_fds}'
+        mem_str += f', children:{num_children}'
 
         msg = (f'epoch:{epoch}, time:{int(time()-tic)}, train_loss:{train_epoch_loss}, '
                f'holdout_miou:{holdout_metrics["miou"]:.4f}, {mem_str}')
@@ -202,6 +227,9 @@ def main():
                 'timestamp': datetime.datetime.now().isoformat(),
                 'ram_gb': ram_gb,
                 'gpu_peak_gb': gpu_peak_gb,
+                'shm_used_mb': shm_used_mb,
+                'num_fds': num_fds,
+                'num_children': num_children,
             }, f, indent=2)
 
         metrics_writer.writerow([
