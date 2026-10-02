@@ -2,11 +2,13 @@ import argparse
 import copy
 import csv
 import datetime
+import gc
 import json
 import os
 import random
 import shutil
 import sys
+import tracemalloc
 from time import time
 
 import numpy as np
@@ -39,6 +41,10 @@ def parse_args():
     p.add_argument('--no_pretrained', action='store_true',
                     help='skip loading pretrained backbone weights (fast local testing only)')
     p.add_argument('--num_workers', type=int, default=4)
+    p.add_argument('--pin_memory', type=int, choices=[0, 1], default=0,
+                    help='DataLoader pin_memory; 0 matches current behavior')
+    p.add_argument('--mem_debug', action='store_true',
+                    help='log live-tensor counts and tracemalloc top allocators every epoch')
     return p.parse_args()
 
 
@@ -61,7 +67,15 @@ def safe_div(n, d):
 def get_memory_stats():
     process = psutil.Process(os.getpid())
 
-    ram_gb = process.memory_info().rss / (1024 ** 3)
+    ram_main_gb = process.memory_info().rss / (1024 ** 3)
+
+    children = process.children(recursive=True)
+    ram_children_gb = 0.0
+    for child in children:
+        try:
+            ram_children_gb += child.memory_info().rss / (1024 ** 3)
+        except psutil.NoSuchProcess:
+            pass
 
     gpu_peak_gb = None
     if torch.cuda.is_available():
@@ -75,9 +89,33 @@ def get_memory_stats():
     if os.path.isdir('/proc'):
         num_fds = len(os.listdir('/proc/self/fd'))
 
-    num_children = len(process.children(recursive=True))
+    num_children = len(children)
 
-    return ram_gb, gpu_peak_gb, shm_used_mb, num_fds, num_children
+    return ram_main_gb, ram_children_gb, gpu_peak_gb, shm_used_mb, num_fds, num_children
+
+
+def log_mem_debug(mylog, prev_snapshot):
+    gc.collect()
+    tensors = [obj for obj in gc.get_objects() if isinstance(obj, torch.Tensor)]
+    cpu_tensors = [t for t in tensors if not t.is_cuda]
+    cpu_bytes = sum(t.element_size() * t.nelement() for t in cpu_tensors)
+
+    msg = (f'[mem_debug] live_tensors:{len(tensors)}, cpu_tensors:{len(cpu_tensors)}, '
+           f'cpu_tensor_mb:{cpu_bytes / (1024 ** 2):.2f}')
+    print(msg, flush=True)
+    print(msg, file=mylog, flush=True)
+
+    snapshot = tracemalloc.take_snapshot()
+    if prev_snapshot is not None:
+        header = '[mem_debug] top 5 allocation growth lines since previous epoch:'
+        print(header, flush=True)
+        print(header, file=mylog, flush=True)
+        for stat in snapshot.compare_to(prev_snapshot, 'lineno')[:5]:
+            line = f'  {stat}'
+            print(line, flush=True)
+            print(line, file=mylog, flush=True)
+
+    return snapshot
 
 
 def evaluate_holdout(solver, holdout_loader):
@@ -151,7 +189,8 @@ def main():
         batch_size=batchsize,
         shuffle=False,
         num_workers=args.num_workers,
-        persistent_workers=args.num_workers > 0)
+        persistent_workers=args.num_workers > 0,
+        pin_memory=bool(args.pin_memory))
 
     holdout_dataset = ImageFolder(holdoutlist, holdout_root, augment=False)
     holdout_loader = torch.utils.data.DataLoader(
@@ -159,7 +198,8 @@ def main():
         batch_size=batchsize,
         shuffle=False,
         num_workers=args.num_workers,
-        persistent_workers=args.num_workers > 0)
+        persistent_workers=args.num_workers > 0,
+        pin_memory=bool(args.pin_memory))
 
     start_epoch = 0
     no_optim = 0
@@ -180,6 +220,10 @@ def main():
     mylog = open(log_path, 'a' if start_epoch > 0 else 'w')
     tic = time()
     last_epoch = start_epoch
+
+    if args.mem_debug:
+        tracemalloc.start()
+    prev_snapshot = None
 
     write_header = not (start_epoch > 0 and os.path.exists(metrics_path))
     metrics_file = open(metrics_path, 'a' if start_epoch > 0 else 'w', newline='')
@@ -205,8 +249,8 @@ def main():
         holdout_metrics = evaluate_holdout(solver, holdout_loader)
         epoch_seconds = time() - epoch_tic
 
-        ram_gb, gpu_peak_gb, shm_used_mb, num_fds, num_children = get_memory_stats()
-        mem_str = f'ram:{ram_gb:.2f}GB'
+        ram_main_gb, ram_children_gb, gpu_peak_gb, shm_used_mb, num_fds, num_children = get_memory_stats()
+        mem_str = f'ram_main:{ram_main_gb:.2f}GB, ram_children:{ram_children_gb:.2f}GB'
         if gpu_peak_gb is not None:
             mem_str += f', gpu_peak:{gpu_peak_gb:.2f}GB'
         if shm_used_mb is not None:
@@ -225,12 +269,16 @@ def main():
             json.dump({
                 'epoch': epoch,
                 'timestamp': datetime.datetime.now().isoformat(),
-                'ram_gb': ram_gb,
+                'ram_main_gb': ram_main_gb,
+                'ram_children_gb': ram_children_gb,
                 'gpu_peak_gb': gpu_peak_gb,
                 'shm_used_mb': shm_used_mb,
                 'num_fds': num_fds,
                 'num_children': num_children,
             }, f, indent=2)
+
+        if args.mem_debug:
+            prev_snapshot = log_mem_debug(mylog, prev_snapshot)
 
         metrics_writer.writerow([
             epoch, train_epoch_loss, holdout_metrics['miou'], holdout_metrics['iou_fg'],
