@@ -1,6 +1,7 @@
 import argparse
 import copy
 import csv
+import datetime
 import json
 import os
 import random
@@ -8,6 +9,7 @@ import sys
 from time import time
 
 import numpy as np
+import psutil
 import torch
 
 from framework import MyFrame
@@ -52,6 +54,14 @@ def list_ids(root):
 
 def safe_div(n, d):
     return n / d if d > 0 else 0.0
+
+
+def get_memory_stats():
+    ram_gb = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3)
+    gpu_peak_gb = None
+    if torch.cuda.is_available():
+        gpu_peak_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
+    return ram_gb, gpu_peak_gb
 
 
 def evaluate_holdout(solver, holdout_loader):
@@ -102,6 +112,7 @@ def main():
     log_path = os.path.join(run_dir, 'train.log')
     config_path = os.path.join(run_dir, 'config.json')
     metrics_path = os.path.join(run_dir, 'metrics.csv')
+    status_path = os.path.join(run_dir, 'status.json')
 
     with open(config_path, 'w') as f:
         json.dump(vars(args), f, indent=2)
@@ -140,9 +151,9 @@ def main():
 
     if args.resume and os.path.exists(last_ckpt_path):
         start_epoch, no_optim, train_epoch_best_loss, best_state_dict = solver.load_checkpoint(last_ckpt_path)
-        print(f'Resuming from {last_ckpt_path} at epoch {start_epoch}')
+        print(f'Resuming from {last_ckpt_path} at epoch {start_epoch}', flush=True)
     else:
-        print('Starting fresh training run')
+        print('Starting fresh training run', flush=True)
 
     if args.resume and os.path.exists(best_json_path):
         with open(best_json_path, 'r') as f:
@@ -174,11 +185,24 @@ def main():
         holdout_metrics = evaluate_holdout(solver, holdout_loader)
         epoch_seconds = time() - epoch_tic
 
+        ram_gb, gpu_peak_gb = get_memory_stats()
+        mem_str = f'ram:{ram_gb:.2f}GB'
+        if gpu_peak_gb is not None:
+            mem_str += f', gpu_peak:{gpu_peak_gb:.2f}GB'
+
         msg = (f'epoch:{epoch}, time:{int(time()-tic)}, train_loss:{train_epoch_loss}, '
-               f'holdout_miou:{holdout_metrics["miou"]:.4f}')
-        print('--------')
-        print(msg)
-        print(msg, file=mylog)
+               f'holdout_miou:{holdout_metrics["miou"]:.4f}, {mem_str}')
+        print('--------', flush=True)
+        print(msg, flush=True)
+        print(msg, file=mylog, flush=True)
+
+        with open(status_path, 'w') as f:
+            json.dump({
+                'epoch': epoch,
+                'timestamp': datetime.datetime.now().isoformat(),
+                'ram_gb': ram_gb,
+                'gpu_peak_gb': gpu_peak_gb,
+            }, f, indent=2)
 
         metrics_writer.writerow([
             epoch, train_epoch_loss, holdout_metrics['miou'], holdout_metrics['iou_fg'],
@@ -193,8 +217,8 @@ def main():
             with open(best_json_path, 'w') as f:
                 json.dump({'epoch': epoch, 'miou': best_holdout_miou}, f, indent=2)
             best_msg = f'New best holdout mIoU {best_holdout_miou:.4f} at epoch {epoch} -> saved {best_ckpt_path}'
-            print(best_msg)
-            print(best_msg, file=mylog)
+            print(best_msg, flush=True)
+            print(best_msg, file=mylog, flush=True)
 
         if train_epoch_loss >= train_epoch_best_loss:
             no_optim += 1
@@ -209,15 +233,15 @@ def main():
 
         if args.early_stop and no_optim > 6:
             stop_msg = 'early stop at %d epoch' % epoch
-            print(stop_msg)
-            print(stop_msg, file=mylog)
+            print(stop_msg, flush=True)
+            print(stop_msg, file=mylog, flush=True)
             break
 
         if no_optim > 3:
             if args.early_stop and solver.old_lr < 5e-7:
                 stop_msg = 'stopping: lr below 5e-7 at epoch %d' % epoch
-                print(stop_msg)
-                print(stop_msg, file=mylog)
+                print(stop_msg, flush=True)
+                print(stop_msg, file=mylog, flush=True)
                 break
             if best_state_dict is not None:
                 solver.net.load_state_dict(best_state_dict)
@@ -225,15 +249,15 @@ def main():
 
         mylog.flush()
 
-    print('Finish!', file=mylog)
+    print('Finish!', file=mylog, flush=True)
     mylog.close()
     metrics_file.close()
 
     if last_epoch >= args.epochs:
-        print(f'Training complete: reached final epoch {last_epoch}/{args.epochs}.')
+        print(f'Training complete: reached final epoch {last_epoch}/{args.epochs}.', flush=True)
     else:
-        print(f'Stopped after epoch {last_epoch} (target was epoch {args.epochs}).')
-        print(f'Run again with --resume to continue training from epoch {last_epoch}.')
+        print(f'Stopped after epoch {last_epoch} (target was epoch {args.epochs}).', flush=True)
+        print(f'Run again with --resume to continue training from epoch {last_epoch}.', flush=True)
 
 
 if __name__ == '__main__':
